@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生出勤記錄表 (安全分享版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
+        .attendance-cell { 
+            transition: all 0.2s ease; 
+            position: relative;
+        }
+        .attendance-cell:hover { 
+            transform: scale(1.05); 
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+            z-index: 10;
+        }
+        .remark-indicator {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 8px 8px 0;
+            border-color: transparent #fbbf24 transparent transparent;
+        }
+        /* 更新：優化提示框樣式 */
+        [title]:hover::after {
+            content: attr(title);
+            position: absolute;
+            background: #1e3a8a; /* 深藍色背景 */
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            white-space: normal;
+            z-index: 1000;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            
+            /* 置中顯示 */
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 8px; /* 與元素的間距 */
+            
+            max-width: 250px;
+            text-align: center; /* 文字置中 */
+            pointer-events: none; /* 避免滑鼠事件干擾 */
+        }
+        input:disabled, select:disabled {
+            background-color: #f3f4f6;
+            cursor: not-allowed;
+        }
+        /* 新增：用於固定窗格的樣式 */
+        th.sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+        td.sticky-col, th.sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+        /* 確保左上角的「座號」儲存格在最上層 */
+        th.sticky-col.sticky-header {
+            z-index: 30;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <!-- 主容器 -->
+    <div id="app-container" class="max-w-7xl mx-auto p-4 md:p-6">
+        
+        <!-- 標題和控制項 -->
+        <header class="bg-white rounded-xl shadow-md p-4 mb-6 flex flex-col md:flex-row items-center justify-between">
+            <div class="flex items-center flex-wrap gap-x-4 gap-y-2 mb-4 md:mb-0">
+                <h1 id="main-title" class="text-2xl md:text-3xl font-bold text-blue-800"></h1>
+                <select id="class-selector" class="rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50"></select>
+                <div class="flex items-center space-x-2">
+                    <select id="weekday-selector" class="rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                        <option value="">星期</option>
+                        <option value="一">星期一</option>
+                        <option value="二">星期二</option>
+                        <option value="三">星期三</option>
+                        <option value="四">星期四</option>
+                        <option value="五">星期五</option>
+                        <option value="六">星期六</option>
+                        <option value="日">星期日</option>
+                    </select>
+                    <input type="text" id="class-period-input" placeholder="節次" class="w-20 rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                </div>
+            </div>
+            <div id="controls" class="flex items-center flex-wrap justify-center gap-2">
+                 <div class="flex items-center space-x-2">
+                    <button id="prev-month" class="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm">&lt;</button>
+                    <span id="current-month" class="text-lg font-semibold w-28 text-center"></span>
+                    <button id="next-month" class="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition shadow-sm">&gt;</button>
+                </div>
+                <button id="login-button" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition shadow-sm font-semibold">老師登入</button>
+                <div id="teacher-controls" class="hidden items-center flex-wrap justify-center gap-2">
+                    <button id="class-management-button" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition shadow-sm">班級管理</button>
+                    <button id="seat-management-button" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition shadow-sm">座號管理</button>
+                    <button id="save-button" class="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition shadow-sm">儲存變更</button>
+                    <button id="logout-button" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition shadow-sm">登出</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 出勤表格 -->
+        <main id="attendance-table-container" class="bg-white rounded-xl shadow-md p-4 overflow-x-auto">
+            <!-- 表格將由 JavaScript 動態生成 -->
+        </main>
+    </div>
+
+    <!-- 登入 Modal -->
+    <div id="login-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm">
+            <h2 class="text-2xl font-bold mb-6 text-center text-blue-800">老師登入</h2>
+            <input type="password" id="password-input" class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-blue-500" placeholder="請輸入老師密碼">
+            <button id="submit-login" class="w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 font-semibold transition">登入</button>
+            <button id="cancel-login" class="w-full mt-2 text-gray-600 hover:text-black">取消</button>
+        </div>
+    </div>
+    
+    <!-- 班級管理 Modal -->
+    <div id="class-management-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
+            <h2 class="text-2xl font-bold mb-6 text-center text-indigo-800">班級管理</h2>
+            <div id="class-list" class="space-y-3 mb-6 max-h-60 overflow-y-auto"></div>
+            <div class="flex space-x-2">
+                <input type="text" id="new-class-name" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="輸入新班級名稱">
+                <button id="add-class-button" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold transition">新增</button>
+            </div>
+            <button id="close-class-management" class="w-full mt-4 text-gray-600 hover:text-black">關閉</button>
+        </div>
+    </div>
+
+    <!-- 座號管理 Modal -->
+    <div id="seat-management-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-lg">
+            <h2 class="text-2xl font-bold mb-4 text-center text-purple-800">座號管理</h2>
+            <p class="text-center text-gray-600 mb-4">請使用 `座號 姓名` 格式 (以空白隔開)，每位學生一行。</p>
+            <textarea id="seat-map-textarea" class="w-full h-64 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 font-mono" placeholder="1 王小明&#10;3 陳大華&#10;5 林美麗"></textarea>
+            <div class="flex justify-end space-x-2 mt-4">
+                <button id="cancel-seat-management" class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition">取消</button>
+                <button id="apply-seat-management" class="px-5 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold transition">套用</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 出缺勤紀錄 Modal -->
+    <div id="attendance-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
+            <h2 id="attendance-modal-title" class="text-2xl font-bold mb-6 text-center text-gray-800"></h2>
+            <div class="grid grid-cols-3 gap-4 mb-4">
+                <button data-status="absent" class="attendance-status-btn p-3 rounded-lg font-semibold transition border-2">缺席</button>
+                <button data-status="late" class="attendance-status-btn p-3 rounded-lg font-semibold transition border-2">遲到</button>
+                <button data-status="leave" class="attendance-status-btn p-3 rounded-lg font-semibold transition border-2">請假</button>
+            </div>
+            <textarea id="attendance-remark" class="w-full h-24 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="輸入備註 (選填)"></textarea>
+            <div class="flex justify-between items-center mt-6">
+                <button id="clear-attendance" class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition">清除紀錄</button>
+                <div>
+                    <button id="cancel-attendance" class="px-5 py-2 text-gray-600 hover:text-black transition mr-2">取消</button>
+                    <button id="save-attendance" class="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition">儲存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 確認 Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-sm">
+            <h2 id="confirm-title" class="text-xl font-bold mb-4 text-center text-red-800"></h2>
+            <p id="confirm-message" class="text-center text-gray-600 mb-6"></p>
+            <div class="flex justify-end space-x-2">
+                 <button id="confirm-cancel-button" class="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition">取消</button>
+                 <button id="confirm-ok-button" class="px-5 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold transition">確定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知 Toast -->
+    <div id="notification" class="fixed bottom-5 right-5 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg transition-transform transform translate-y-20 opacity-0"></div>
+
+    <script>
+        // --- 設定區 ---
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx8MaMeaKe7y3C3NftCMG47M2d0vPNnWgvWETmS_TpKTt3HwhaSQlqze2rcADg5F0ar/exec';
+        // --- --- ---
+
+        // 應用程式狀態
+        let state = {
+            currentDate: new Date(),
+            classes: {},
+            currentClass: null,
+            isTeacher: false,
+            editingCell: null,
+        };
+
+        const attendanceStatus = {
+            'absent': { text: '缺', color: 'bg-red-200', borderColor: 'border-red-500' },
+            'late': { text: '遲', color: 'bg-yellow-200', borderColor: 'border-yellow-500' },
+            'leave': { text: '假', color: 'bg-blue-200', borderColor: 'border-blue-500' }
+        };
+        const defaultStatus = { text: '／', color: 'bg-gray-200' };
+
+        // DOM 元素
+        const mainTitle = document.getElementById('main-title');
+        const classSelector = document.getElementById('class-selector');
+        const classPeriodInput = document.getElementById('class-period-input');
+        const weekdaySelector = document.getElementById('weekday-selector');
+        const currentMonthSpan = document.getElementById('current-month');
+        const tableContainer = document.getElementById('attendance-table-container');
+        const loginButton = document.getElementById('login-button');
+        const teacherControls = document.getElementById('teacher-controls');
+        const logoutButton = document.getElementById('logout-button');
+        const saveButton = document.getElementById('save-button');
+
+        // Sanitize HTML
+        function sanitizeHTML(str) {
+            const temp = document.createElement('div');
+            temp.textContent = str;
+            return temp.innerHTML;
+        }
+
+        // --- 資料處理 & 後端通訊 ---
+        async function fetchData(action, payload = {}) {
+            try {
+                const response = await fetch(GOOGLE_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'cors',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ action, ...payload }),
+                    redirect: 'follow'
+                });
+
+                if (!response.ok) throw new Error(`伺服器回應錯誤: ${response.status}`);
+                return await response.json();
+
+            } catch (error) {
+                console.error(`Fetch error for action "${action}":`, error);
+                throw error;
+            }
+        }
+
+        async function loadData() {
+            showNotification('🔄 正在載入雲端資料...', 'info', 2000);
+            try {
+                const result = await fetchData('getData');
+                let loadedClasses = result.classes || { '預設班級': { students: [], attendance: {}, monitorSeat: null, period: '', weekday: '' } };
+                // 確保舊資料有新的欄位
+                for (const className in loadedClasses) {
+                    if (!loadedClasses[className].hasOwnProperty('period')) loadedClasses[className].period = '';
+                    if (!loadedClasses[className].hasOwnProperty('weekday')) loadedClasses[className].weekday = '';
+                }
+                state.classes = loadedClasses;
+                state.currentClass = result.currentClass || Object.keys(state.classes)[0];
+                showNotification('✅ 資料載入成功！', 'success');
+            } catch (error) {
+                showNotification('🔴 無法載入雲端資料: ' + error.message, 'error');
+                state.classes = { '預設班級': { students: [], attendance: {}, monitorSeat: null, period: '', weekday: '' } };
+                state.currentClass = '預設班級';
+            } finally {
+                renderAll();
+            }
+        }
+        
+        async function login(password) {
+            showNotification('🔄 正在登入...', 'info', 2000);
+            try {
+                const result = await fetchData('login', { password });
+                if (result.success) {
+                    state.isTeacher = true;
+                    let loadedClasses = result.data.classes || { '預設班級': { students: [], attendance: {}, monitorSeat: null, period: '', weekday: '' } };
+                    // 確保舊資料有新的欄位
+                    for (const className in loadedClasses) {
+                        if (!loadedClasses[className].hasOwnProperty('period')) loadedClasses[className].period = '';
+                        if (!loadedClasses[className].hasOwnProperty('weekday')) loadedClasses[className].weekday = '';
+                    }
+                    state.classes = loadedClasses;
+                    state.currentClass = result.data.currentClass || Object.keys(state.classes)[0];
+                    sessionStorage.setItem('teacherPassword', password);
+                    showNotification('✅ 登入成功！', 'success');
+                    renderAll();
+                    return true;
+                } else {
+                    throw new Error(result.error || '未知錯誤');
+                }
+            } catch (error) {
+                showNotification(`🔴 登入失敗: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function saveData() {
+            if (!state.isTeacher) return;
+            const password = sessionStorage.getItem('teacherPassword');
+            if (!password) {
+                showNotification('🔴 登入階段已過期，請重新登入。', 'error');
+                return;
+            }
+            showNotification('🔄 正在儲存資料...', 'info', 2000);
+            saveButton.classList.remove('animate-pulse');
+            try {
+                const dataToSave = { classes: state.classes, currentClass: state.currentClass };
+                const result = await fetchData('saveData', { password, data: dataToSave });
+                if (result.success) {
+                    showNotification('✅ 資料已成功同步至雲端！', 'success');
+                } else {
+                    throw new Error(result.error || '儲存失敗');
+                }
+            } catch (error) {
+                showNotification(`🔴 儲存失敗: ${error.message}`, 'error');
+                saveButton.classList.add('animate-pulse');
+            }
+        }
+
+        // --- UI 渲染 ---
+        function renderAll() {
+            updateTitle();
+            updateMonthDisplay();
+            updateClassSelector();
+            updatePeriodAndWeekdayInputs();
+            renderTable();
+            updateTeacherControls();
+        }
+
+        function updateTitle() {
+            const classData = state.classes[state.currentClass] || {};
+            const weekday = classData.weekday ? ` 星期${sanitizeHTML(classData.weekday)}` : '';
+            const periodText = classData.period ? ` 第 ${sanitizeHTML(classData.period)} 節` : '';
+            mainTitle.textContent = `${state.currentClass || ''}${weekday}${periodText} 出勤記錄表`;
+        }
+        
+        function updateMonthDisplay() {
+            currentMonthSpan.textContent = `${state.currentDate.getFullYear()} / ${state.currentDate.getMonth() + 1}`;
+        }
+
+        function updateClassSelector() {
+            classSelector.innerHTML = '';
+            for (const className in state.classes) {
+                const option = document.createElement('option');
+                option.value = className;
+                option.textContent = className;
+                if (className === state.currentClass) option.selected = true;
+                classSelector.appendChild(option);
+            }
+        }
+
+        function updatePeriodAndWeekdayInputs() {
+            const classData = state.classes[state.currentClass] || {};
+            weekdaySelector.value = classData.weekday || '';
+            classPeriodInput.value = classData.period || '';
+        }
+
+        function updateTeacherControls() {
+            const isTeacher = state.isTeacher;
+
+            loginButton.classList.toggle('hidden', isTeacher);
+            teacherControls.classList.toggle('hidden', !isTeacher);
+            teacherControls.classList.toggle('flex', isTeacher);
+
+            // 根據是否為老師來啟用/禁用輸入框
+            weekdaySelector.disabled = !isTeacher;
+            classPeriodInput.disabled = !isTeacher;
+        }
+
+        function renderTable() {
+            const year = state.currentDate.getFullYear();
+            const month = state.currentDate.getMonth();
+            const monthKey = `${year}-${month + 1}`;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const classData = state.classes[state.currentClass] || { students: [], attendance: {}, monitorSeat: null };
+            const students = classData.students.sort((a, b) => a.seat - b.seat);
+            const monitorSeat = classData.monitorSeat;
+            const monthlyAttendance = classData.attendance[monthKey] || {};
+
+            let tableHTML = `<table class="min-w-full divide-y divide-gray-200 border-collapse">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="sticky-header sticky-col px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">座號</th>`;
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                const dayOfWeek = date.getDay(); // 0 for Sunday, 6 for Saturday
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                const weekendHeaderClass = isWeekend ? 'bg-red-100 text-red-700' : 'bg-gray-50';
+                tableHTML += `<th class="sticky-header px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider ${weekendHeaderClass}">${day}</th>`;
+            }
+            tableHTML += `</tr></thead><tbody class="bg-white divide-y divide-gray-200">`;
+
+            students.forEach(student => {
+                const studentName = state.isTeacher ? student.name : '';
+                const isMonitor = student.seat == monitorSeat;
+                const rowBgClass = isMonitor ? 'bg-yellow-100' : 'bg-white';
+                
+                tableHTML += `<tr class="hover:bg-gray-50">
+                    <td class="sticky-col px-4 py-3 whitespace-nowrap font-medium text-gray-900 ${rowBgClass} relative" title="${sanitizeHTML(studentName)}">${student.seat}</td>`;
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month, day);
+                    const dayOfWeek = date.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+                    const key = `${student.seat}-${day}`;
+                    const record = monthlyAttendance[key];
+                    let status = record ? attendanceStatus[record.status] : defaultStatus;
+                    
+                    if (isWeekend && !record) {
+                        status = { ...defaultStatus, color: 'bg-red-100' };
+                    }
+
+                    const remark = record && record.remark ? record.remark : '';
+                    const title = state.isTeacher && remark ? sanitizeHTML(remark) : '';
+                    
+                    tableHTML += `<td class="attendance-cell text-center p-0 m-0">
+                        <div class="w-full h-full flex items-center justify-center cursor-pointer p-3 ${status.color}" data-seat="${student.seat}" data-day="${day}" title="${title}">
+                            ${status.text}
+                            ${remark ? '<div class="remark-indicator"></div>' : ''}
+                        </div>
+                    </td>`;
+                }
+                tableHTML += `</tr>`;
+            });
+
+            tableHTML += `</tbody></table>`;
+            if (students.length === 0) {
+                tableHTML = `<div class="text-center py-10 text-gray-500">
+                    <p>目前沒有學生資料。</p>
+                    ${state.isTeacher ? '<p>請點擊「座號管理」新增學生。</p>' : '<p>請老師登入後新增學生資料。</p>'}
+                </div>`;
+            }
+            tableContainer.innerHTML = tableHTML;
+        }
+
+        function showNotification(message, type = 'info', duration = 3000) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = 'fixed bottom-5 right-5 px-6 py-3 rounded-lg shadow-lg transition-transform transform';
+            if (type === 'success') notification.classList.add('bg-green-600', 'text-white');
+            else if (type === 'error') notification.classList.add('bg-red-600', 'text-white');
+            else notification.classList.add('bg-gray-800', 'text-white');
+
+            notification.classList.remove('opacity-0', 'translate-y-20');
+            setTimeout(() => {
+                notification.classList.add('opacity-0', 'translate-y-20');
+            }, duration);
+        }
+
+        // --- 事件監聽 ---
+        document.addEventListener('DOMContentLoaded', loadData);
+        document.getElementById('prev-month').addEventListener('click', () => {
+            state.currentDate.setMonth(state.currentDate.getMonth() - 1);
+            renderAll();
+        });
+        document.getElementById('next-month').addEventListener('click', () => {
+            state.currentDate.setMonth(state.currentDate.getMonth() + 1);
+            renderAll();
+        });
+        classSelector.addEventListener('change', (e) => {
+            state.currentClass = e.target.value;
+            renderAll();
+        });
+
+        classPeriodInput.addEventListener('input', (e) => {
+            if (state.currentClass && state.classes[state.currentClass]) {
+                state.classes[state.currentClass].period = e.target.value;
+                saveButton.classList.add('animate-pulse');
+            }
+            updateTitle();
+        });
+        weekdaySelector.addEventListener('change', (e) => {
+            if (state.currentClass && state.classes[state.currentClass]) {
+                state.classes[state.currentClass].weekday = e.target.value;
+                saveButton.classList.add('animate-pulse');
+            }
+            updateTitle();
+        });
+
+        tableContainer.addEventListener('click', (e) => {
+            if (!state.isTeacher) {
+                showNotification('訪客模式無法修改資料。', 'info');
+                return;
+            }
+            const cell = e.target.closest('.attendance-cell div');
+            if (cell) {
+                const { seat, day } = cell.dataset;
+                state.editingCell = { seat, day };
+                openAttendanceModal(seat, day);
+            }
+        });
+        
+        // --- Modal 邏輯 ---
+        // 登入
+        const loginModal = document.getElementById('login-modal');
+        loginButton.addEventListener('click', () => loginModal.classList.remove('hidden'));
+        document.getElementById('cancel-login').addEventListener('click', () => loginModal.classList.add('hidden'));
+        document.getElementById('submit-login').addEventListener('click', async () => {
+            const password = document.getElementById('password-input').value;
+            if (await login(password)) {
+                loginModal.classList.add('hidden');
+                document.getElementById('password-input').value = '';
+            }
+        });
+        document.getElementById('password-input').addEventListener('keyup', async (e) => {
+            if (e.key === 'Enter') {
+                if (await login(e.target.value)) {
+                    loginModal.classList.add('hidden');
+                    e.target.value = '';
+                }
+            }
+        });
+
+        logoutButton.addEventListener('click', () => {
+            state.isTeacher = false;
+            sessionStorage.removeItem('teacherPassword');
+            showNotification('您已登出。', 'info');
+            loadData();
+        });
+        saveButton.addEventListener('click', saveData);
+
+        // 班級管理
+        const classManagementModal = document.getElementById('class-management-modal');
+        document.getElementById('class-management-button').addEventListener('click', () => {
+            renderClassList();
+            classManagementModal.classList.remove('hidden');
+        });
+        document.getElementById('close-class-management').addEventListener('click', () => classManagementModal.classList.add('hidden'));
+
+        function renderClassList() {
+            const classListDiv = document.getElementById('class-list');
+            classListDiv.innerHTML = '';
+            const classNames = Object.keys(state.classes);
+            classNames.forEach(name => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-2 bg-gray-100 rounded-lg gap-2';
+                
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.value = name;
+                nameInput.className = 'flex-grow bg-transparent focus:outline-none focus:bg-white rounded px-2 py-1 w-1/2';
+                nameInput.addEventListener('change', (e) => {
+                    const newName = sanitizeHTML(e.target.value.trim());
+                    if (newName && !state.classes[newName]) {
+                        const classData = state.classes[name];
+                        delete state.classes[name];
+                        state.classes[newName] = classData;
+                        if (state.currentClass === name) {
+                            state.currentClass = newName;
+                        }
+                        saveButton.classList.add('animate-pulse');
+                        renderClassList();
+                        renderAll();
+                    } else {
+                        nameInput.value = name; // Revert
+                        showNotification('🔴 班級名稱重複或無效。', 'error');
+                    }
+                });
+
+                const monitorInput = document.createElement('input');
+                monitorInput.type = 'number';
+                monitorInput.placeholder = '小老師座號';
+                monitorInput.className = 'bg-white focus:outline-none rounded px-2 py-1 border border-gray-300 w-28';
+                monitorInput.value = state.classes[name].monitorSeat || '';
+                monitorInput.addEventListener('change', (e) => {
+                    const seat = e.target.value ? parseInt(e.target.value, 10) : null;
+                    if (seat === null || (!isNaN(seat) && seat > 0)) {
+                         state.classes[name].monitorSeat = seat;
+                         saveButton.classList.add('animate-pulse');
+                         renderTable();
+                         showNotification('✅ 小老師座號已更新', 'success');
+                    } else {
+                         e.target.value = state.classes[name].monitorSeat || '';
+                         showNotification('🔴 請輸入有效的座號', 'error');
+                    }
+                });
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '刪除';
+                deleteBtn.className = 'ml-2 px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 text-sm';
+                if (classNames.length <= 1) {
+                    deleteBtn.disabled = true;
+                    deleteBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+                deleteBtn.onclick = () => {
+                    showConfirm('確定刪除？', `您確定要刪除班級「${name}」嗎？所有相關資料將會遺失。`, () => {
+                        delete state.classes[name];
+                        if (state.currentClass === name) {
+                            state.currentClass = Object.keys(state.classes)[0];
+                        }
+                        saveButton.classList.add('animate-pulse');
+                        renderClassList();
+                        renderAll();
+                    });
+                };
+                
+                div.appendChild(nameInput);
+                div.appendChild(monitorInput);
+                div.appendChild(deleteBtn);
+                classListDiv.appendChild(div);
+            });
+        }
+
+        document.getElementById('add-class-button').addEventListener('click', () => {
+            const newClassNameInput = document.getElementById('new-class-name');
+            const newClassName = sanitizeHTML(newClassNameInput.value.trim());
+            if (newClassName && !state.classes[newClassName]) {
+                state.classes[newClassName] = { students: [], attendance: {}, monitorSeat: null, period: '', weekday: '' };
+                state.currentClass = newClassName;
+                newClassNameInput.value = '';
+                saveButton.classList.add('animate-pulse');
+                renderClassList();
+                renderAll();
+            } else {
+                showNotification('🔴 班級名稱重複或無效。', 'error');
+            }
+        });
+        
+        // 座號管理
+        const seatManagementModal = document.getElementById('seat-management-modal');
+        const seatTextarea = document.getElementById('seat-map-textarea');
+        document.getElementById('seat-management-button').addEventListener('click', () => {
+            const classData = state.classes[state.currentClass] || { students: [] };
+            const sortedStudents = classData.students.sort((a,b) => a.seat - b.seat);
+            seatTextarea.value = sortedStudents.map(s => `${s.seat} ${s.name}`).join('\n');
+            seatManagementModal.classList.remove('hidden');
+        });
+        document.getElementById('cancel-seat-management').addEventListener('click', () => seatManagementModal.classList.add('hidden'));
+        document.getElementById('apply-seat-management').addEventListener('click', () => {
+            const text = seatTextarea.value;
+            const lines = text.split('\n').filter(line => line.trim() !== '');
+            const newStudents = [];
+            const seatSet = new Set();
+            const nameSet = new Set();
+            let formatError = false;
+
+            for (const line of lines) {
+                const parts = line.trim().split(/ (.*)/s);
+                if (parts.length < 2) { formatError = true; break; }
+
+                const seat = parseInt(parts[0], 10);
+                const name = sanitizeHTML(parts[1].trim());
+
+                if (isNaN(seat) || seat <= 0 || !name || seatSet.has(seat) || nameSet.has(name)) {
+                    formatError = true; break;
+                }
+                seatSet.add(seat);
+                nameSet.add(name);
+                newStudents.push({ seat, name });
+            }
+
+            if (formatError) {
+                showNotification('🔴 格式錯誤、座號或姓名重複，請檢查。', 'error');
+                return;
+            }
+
+            const classData = state.classes[state.currentClass];
+            const oldStudents = classData.students;
+            const oldAttendance = classData.attendance || {};
+            const newAttendance = {};
+
+            for (const monthKey in oldAttendance) {
+                newAttendance[monthKey] = {};
+                const monthlyRecords = oldAttendance[monthKey];
+
+                newStudents.forEach(newStudent => {
+                    const oldStudent = oldStudents.find(s => s.name === newStudent.name);
+                    if (oldStudent) {
+                        for (const recordKey in monthlyRecords) {
+                            const [seatStr, dayStr] = recordKey.split('-');
+                            if (parseInt(seatStr, 10) === oldStudent.seat) {
+                                const newRecordKey = `${newStudent.seat}-${dayStr}`;
+                                newAttendance[monthKey][newRecordKey] = monthlyRecords[recordKey];
+                            }
+                        }
+                    }
+                });
+            }
+            
+            classData.students = newStudents;
+            classData.attendance = newAttendance;
+            
+            saveButton.classList.add('animate-pulse');
+            seatManagementModal.classList.add('hidden');
+            renderTable();
+            showNotification('✅ 座號設定已套用！', 'success');
+        });
+        
+        // 出缺勤紀錄 Modal
+        const attendanceModal = document.getElementById('attendance-modal');
+        const attendanceModalTitle = document.getElementById('attendance-modal-title');
+        const attendanceRemark = document.getElementById('attendance-remark');
+        const statusButtons = document.querySelectorAll('.attendance-status-btn');
+        let selectedStatus = null;
+
+        function openAttendanceModal(seat, day) {
+            const classData = state.classes[state.currentClass];
+            const student = classData.students.find(s => s.seat == seat);
+            attendanceModalTitle.textContent = `記錄 ${student.name} (${seat}號) - ${day}日`;
+            
+            const monthKey = `${state.currentDate.getFullYear()}-${state.currentDate.getMonth() + 1}`;
+            const key = `${seat}-${day}`;
+            const record = classData.attendance[monthKey]?.[key];
+
+            selectedStatus = record?.status || null;
+            attendanceRemark.value = record?.remark || '';
+            updateStatusButtons();
+            
+            attendanceModal.classList.remove('hidden');
+        }
+
+        function updateStatusButtons() {
+            statusButtons.forEach(btn => {
+                if (btn.dataset.status === selectedStatus) {
+                    btn.classList.add(attendanceStatus[selectedStatus].color, attendanceStatus[selectedStatus].borderColor);
+                } else {
+                    btn.className = 'attendance-status-btn p-3 rounded-lg font-semibold transition border-2';
+                }
+            });
+        }
+        
+        statusButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const status = button.dataset.status;
+                selectedStatus = (selectedStatus === status) ? null : status;
+                updateStatusButtons();
+            });
+        });
+
+        document.getElementById('save-attendance').addEventListener('click', () => {
+            const { seat, day } = state.editingCell;
+            const monthKey = `${state.currentDate.getFullYear()}-${state.currentDate.getMonth() + 1}`;
+            const key = `${seat}-${day}`;
+            const classData = state.classes[state.currentClass];
+
+            if (!classData.attendance[monthKey]) classData.attendance[monthKey] = {};
+            
+            if (selectedStatus) {
+                classData.attendance[monthKey][key] = {
+                    status: selectedStatus,
+                    remark: sanitizeHTML(attendanceRemark.value.trim())
+                };
+            } else {
+                delete classData.attendance[monthKey][key];
+            }
+            
+            saveButton.classList.add('animate-pulse');
+            attendanceModal.classList.add('hidden');
+            renderTable();
+        });
+
+        document.getElementById('clear-attendance').addEventListener('click', () => {
+            selectedStatus = null;
+            attendanceRemark.value = '';
+            updateStatusButtons();
+        });
+
+        document.getElementById('cancel-attendance').addEventListener('click', () => {
+            attendanceModal.classList.add('hidden');
+        });
+        
+        // 確認 Modal
+        let confirmCallback = null;
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmTitle = document.getElementById('confirm-title');
+        const confirmMessage = document.getElementById('confirm-message');
+
+        function showConfirm(title, message, callback) {
+            confirmTitle.textContent = title;
+            confirmMessage.textContent = message;
+            confirmCallback = callback;
+            confirmModal.classList.remove('hidden');
+        }
+
+        document.getElementById('confirm-ok-button').addEventListener('click', () => {
+            if (confirmCallback) confirmCallback();
+            confirmModal.classList.add('hidden');
+        });
+        document.getElementById('confirm-cancel-button').addEventListener('click', () => {
+            confirmModal.classList.add('hidden');
+        });
+
+    </script>
+</body>
+</html>
