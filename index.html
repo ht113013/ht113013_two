@@ -229,21 +229,23 @@
         }
 
         // --- 資料處理 & 後端通訊 ---
-        async function fetchData(action, payload = {}) {
+        async function fetchData(action, params = {}) {
             try {
                 const response = await fetch(GOOGLE_SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'cors',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({ action, ...payload }),
-                    redirect: 'follow'
+                    // 【關鍵修改】：將 application/json 改為 text/plain，或直接省略 headers
+                    headers: {  'Content-Type': 'text/plain;charset=utf-8',
+		    },
+		    // 將要傳遞的資料打包成 JSON 字串
+                    body: JSON.stringify({ action: action, ...params })
                 });
 
-                if (!response.ok) throw new Error(`伺服器回應錯誤: ${response.status}`);
-                return await response.json();
+                if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+		}
 
             } catch (error) {
-                console.error(`Fetch error for action "${action}":`, error);
+                console.error('Fetch error for action "' + action + '":', error);
                 throw error;
             }
         }
