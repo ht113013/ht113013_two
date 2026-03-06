@@ -231,19 +231,30 @@
         // --- 資料處理 & 後端通訊 ---
         async function fetchData(action, params = {}) {
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    // 【關鍵修改】：將 application/json 改為 text/plain，或直接省略 headers
-                    headers: {  'Content-Type': 'text/plain;charset=utf-8',
-		    },
-		    // 將要傳遞的資料打包成 JSON 字串
-                    body: JSON.stringify({ action: action, ...params })
-                });
+                let fetchOptions = {};
+                if (action === 'getData') {
+                 // 【載入資料】：使用 GET 請求，對應後端的 doGet 函數
+                targetUrl = `${GOOGLE_SCRIPT_URL}?action=getData`;
+                fetchOptions = {
+                    method: 'GET',
+                };
+            } else {
+            // 【儲存資料】：使用 POST 請求，並設定 text/plain 來避開 CORS 錯誤
+            fetchOptions = {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8',
+                },
+                body: JSON.stringify({ action: action, ...params })
+            };
+        }
+            const response = await fetch(GOOGLE_SCRIPT_URL, fetchOptions);
 
-                if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
 		}
-
+                const result = await response.json();
+                return result;
             } catch (error) {
                 console.error('Fetch error for action "' + action + '":', error);
                 throw error;
